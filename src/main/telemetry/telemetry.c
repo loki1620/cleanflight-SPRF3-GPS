@@ -55,7 +55,7 @@
 #include "telemetry/msp_shared.h"
 
 PG_REGISTER_WITH_RESET_TEMPLATE(telemetryConfig_t, telemetryConfig, PG_TELEMETRY_CONFIG, 0);
-
+#ifdef TELEMETRY_IBUS
 PG_RESET_TEMPLATE(telemetryConfig_t, telemetryConfig,
     .telemetry_inverted = false,
     .halfDuplex = 1,
@@ -68,8 +68,41 @@ PG_RESET_TEMPLATE(telemetryConfig_t, telemetryConfig,
     .frsky_vfas_cell_voltage = 0,
     .hottAlarmSoundInterval = 5,
     .pidValuesAsTelemetry = 0,
-    .report_cell_voltage = false
+    .report_cell_voltage = false,
+    .flysky_sensors = {
+        IBUS_SENSOR_TYPE_TEMPERATURE,
+        IBUS_SENSOR_TYPE_EXTERNAL_VOLTAGE,
+        IBUS_SENSOR_TYPE_BAT_CURR,
+        IBUS_SENSOR_TYPE_FUEL,
+        IBUS_SENSOR_TYPE_FLIGHT_MODE,
+        IBUS_SENSOR_TYPE_CMP_HEAD,
+        IBUS_SENSOR_TYPE_PRES,
+        IBUS_SENSOR_TYPE_ALT,
+        IBUS_SENSOR_TYPE_GROUND_SPEED,
+        IBUS_SENSOR_TYPE_VERTICAL_SPEED,
+        IBUS_SENSOR_TYPE_COG,
+        IBUS_SENSOR_TYPE_CLIMB_RATE,
+        IBUS_SENSOR_TYPE_GPS_LAT,
+        IBUS_SENSOR_TYPE_GPS_LON,
+        IBUS_SENSOR_TYPE_GPS_ALT
+    }
 );
+#else
+PG_RESET_TEMPLATE(telemetryConfig_t, telemetryConfig,
+    .telemetry_inverted = false,
+    .halfDuplex = 1,
+    .telemetry_switch = 0,
+    .gpsNoFixLatitude = 0,
+    .gpsNoFixLongitude = 0,
+    .frsky_coordinate_format = FRSKY_FORMAT_DMS,
+    .frsky_unit = FRSKY_UNIT_METRICS,
+    .frsky_vfas_precision = 0,
+    .frsky_vfas_cell_voltage = 0,
+    .hottAlarmSoundInterval = 5,
+    .pidValuesAsTelemetry = 0,
+    .report_cell_voltage = false,
+);
+#endif
 
 void telemetryInit(void)
 {
