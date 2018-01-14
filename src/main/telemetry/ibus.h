@@ -54,7 +54,7 @@ typedef enum {
 
     IBUS_SENSOR_TYPE_GPS_FULL         = 0xfd,
     IBUS_SENSOR_TYPE_VOLT_FULL        = 0xf0,
-    IBUS_SENSOR_TYPE_ACC_FUL          = 0xef,
+    IBUS_SENSOR_TYPE_ACC_FULL          = 0xef,
 
     IBUS_SENSOR_TYPE_UNKNOWN          = 0xff
 } ibusSensorType_e;
