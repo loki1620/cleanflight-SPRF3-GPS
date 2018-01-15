@@ -78,7 +78,7 @@ typedef enum {
 } ibusCommand_e;
 
 const uint8_t FULL_GPS_IDS[] = {
-	IBUS_SENSOR_TYPE_GPS_STATUS,
+  IBUS_SENSOR_TYPE_GPS_STATUS,
   IBUS_SENSOR_TYPE_GPS_LAT,
   IBUS_SENSOR_TYPE_GPS_LON,
   IBUS_SENSOR_TYPE_GPS_ALT,
@@ -186,6 +186,8 @@ static void set16u(uint8_t* buffer, uint16_t measurement)
   buffer[0] = LBYTE(measurement);
   buffer[1] = HBYTE(measurement);
 }
+
+#if defined(GPS) || defined(BARO)
 static void set32(uint8_t* buffer, int32_t val) {
   buffer[0] = (uint8_t)val;
   buffer[1] = (uint8_t)(((uint32_t)val >> 8) & 0xFF);
@@ -198,6 +200,8 @@ static void set32u(uint8_t* buffer, uint32_t val) {
     buffer[2] = (uint8_t)(((uint32_t)val >> 16) & 0xFF);
     buffer[3] = (uint8_t)(((uint32_t)val >> 24) & 0xFF);
 }
+#endif
+
 
 static void setVoltage(uint8_t* buffer){
   uint16_t voltage = getBatteryVoltage() *10;
@@ -208,23 +212,13 @@ static void setVoltage(uint8_t* buffer){
 }
 
 static int32_t getTemperature() {
-  int32_t temperature = 0;
+  int32_t temperature = gyroGetTemperature() * 10;
+#if defined(BARO)
   if (sensors(SENSOR_BARO)) temperature = (uint16_t) ((baro.baroTemperature + 50) / 10);
-  else temperature = gyroGetTemperature() * 10;
+#endif
   return temperature;
 }
-static void setTemperature(uint8_t* buffer){
-    set16u(buffer, (uint16_t)(getTemperature() + IBUS_TEMPERATURE_OFFSET));
-}
-static void setCellVoltage(uint8_t* buffer){
-  uint16_t voltage = getBatteryAverageCellVoltage() *10;
-  set16u(buffer, voltage);
-}
-static void setBatCurrent(uint8_t* buffer)
-{
-  uint16_t current = (uint16_t)getAmperage();
-  set16u(buffer, current);
-}
+
 static void setFuel(uint8_t* buffer){
   if (batteryConfig()->batteryCapacity > 0) {
       //calculateBatteryPercentageRemaining()
@@ -246,39 +240,20 @@ static void setRPM(uint8_t* buffer){
     set16u(buffer, (uint16_t)(batteryConfig()->batteryCapacity));//  / BLADE_NUMBER_DIVIDER
   }
 }
-
-static void setVario(uint8_t* buffer){
-  int32_t vario = getEstimatedVario(); //cm/s
-  set16(buffer, (int16_t)vario);
-}
-
+#ifdef GPS
 static void setGPSstatus(uint8_t* buffer){
   uint8_t gpsFixType = 0;
   uint8_t sats = 0;
-  #if defined(GPS)
   if (sensors(SENSOR_GPS)) {
       if (!STATE(GPS_FIX)) gpsFixType = 1;
       else gpsFixType = gpsSol.numSat < 5 ? 2 : 3;
       sats = gpsSol.numSat;
   }
-  #endif
   buffer[0] = gpsFixType;
   buffer[1] = sats;
 }
-static void setGPSALT(uint8_t* buffer){
-  int32_t alt = 0;
-  #if defined(GPS)
-    if (STATE(GPS_FIX) && sensors(SENSOR_GPS)) alt = gpsSol.llh.alt;
-  #endif
-  set32(buffer, alt);
-}
-static void setGPSDist(uint8_t* buffer){
-  uint16_t dist = 0;
-  #if defined(GPS)
-    if (STATE(GPS_FIX) && sensors(SENSOR_GPS)) dist = GPS_distanceToHome;
-  #endif
-  set16u(buffer, dist);
-}
+#endif
+
 
 static void setMode(uint8_t* buffer){
   uint16_t flightMode = 1; //Acro
@@ -298,6 +273,7 @@ static void setTelemetryValueToBuffer(uint8_t* buffer, uint8_t sensorType, uint8
   	uint8_t i = 0;
   	uint8_t offset = 0;
     uint8_t size = 0;
+	
     //clear buffer
   	for (i = 0; i < length; i++) {
   		buffer[i] = 0;
@@ -307,7 +283,7 @@ static void setTelemetryValueToBuffer(uint8_t* buffer, uint8_t sensorType, uint8
         setVoltage(buffer);
         break;
       case IBUS_SENSOR_TYPE_TEMPERATURE:
-        setTemperature(buffer);
+        set16u(buffer, (uint16_t)(getTemperature() + IBUS_TEMPERATURE_OFFSET));
         break;
       case IBUS_SENSOR_TYPE_RPM_FLYSKY:
         set16(buffer, (int16_t)rcCommand[THROTTLE]);
@@ -333,34 +309,34 @@ static void setTelemetryValueToBuffer(uint8_t* buffer, uint8_t sensorType, uint8
           offset += size;
         }
         break;
-      case IBUS_SENSOR_TYPE_CELL:
-        setCellVoltage(buffer);
-        break;
-      case IBUS_SENSOR_TYPE_BAT_CURR:
-        setBatCurrent(buffer);
-        break;
       case IBUS_SENSOR_TYPE_FUEL:
         setFuel(buffer);
         break;
       case IBUS_SENSOR_TYPE_RPM:
         setRPM(buffer);
         break;
-      case IBUS_SENSOR_TYPE_CMP_HEAD:
-        set16u(buffer, DECIDEGREES_TO_DEGREES(attitude.values.yaw));
+      case IBUS_SENSOR_TYPE_FLIGHT_MODE:
+        setMode(buffer);
         break;
+      case IBUS_SENSOR_TYPE_CELL:
+        set16u(buffer, (uint16_t)(getBatteryAverageCellVoltage() *10));
+        break;
+      case IBUS_SENSOR_TYPE_BAT_CURR:
+        set16u(buffer, (uint16_t)getAmperage());
+        break;
+
+      case IBUS_SENSOR_TYPE_CMP_HEAD:
+#if defined(MAG)
+        set16u(buffer, DECIDEGREES_TO_DEGREES(attitude.values.yaw));
+#endif
+        break;
+#if defined(BARO) || defined(SONAR)
       case IBUS_SENSOR_TYPE_VERTICAL_SPEED:
       case IBUS_SENSOR_TYPE_CLIMB_RATE:
-      //same as climb rate!?!
-        setVario(buffer);
+        //same as climb rate!?!
+        set16(buffer, (int16_t)getEstimatedVario());
         break;
-      case IBUS_SENSOR_TYPE_COG:
-        #if defined(GPS)
-          if (STATE(GPS_FIX) && sensors(SENSOR_GPS))set16u(buffer, gpsSol.groundCourse * 100);
-        #endif
-        break;
-      case IBUS_SENSOR_TYPE_GPS_STATUS:
-        setGPSstatus(buffer);
-        break;
+#endif
       case IBUS_SENSOR_TYPE_ACC_X:
         set16(buffer, ((float)acc.accSmooth[X] / acc.dev.acc_1G) * 1000);
         //set16(buffer, accSum[X]);
@@ -380,51 +356,51 @@ static void setTelemetryValueToBuffer(uint8_t* buffer, uint8_t sensorType, uint8
       case IBUS_SENSOR_TYPE_YAW:
         set16(buffer, attitude.values.yaw * 10);
         break;
+      case IBUS_SENSOR_TYPE_ARMED:
+        set16u(buffer, ARMING_FLAG(ARMED) ? 0 : 1);
+        break;
+#if defined(GPS)
+      case IBUS_SENSOR_TYPE_SPE: //km/h
+        //GPS_SPEED in cm/s => km/h, 1cm/s = 0.036 km/h
+        if (STATE(GPS_FIX) && sensors(SENSOR_GPS)) set16u(buffer, gpsSol.groundSpeed * 36 / 100);
+        break;
+      case IBUS_SENSOR_TYPE_GPS_LAT:
+        if (STATE(GPS_FIX) && sensors(SENSOR_GPS)) set32u(buffer, gpsSol.llh.lat);
+        break;
+      case IBUS_SENSOR_TYPE_GPS_LON:
+        if (STATE(GPS_FIX) && sensors(SENSOR_GPS)) set32u(buffer, gpsSol.llh.lon);
+        break;
+      case IBUS_SENSOR_TYPE_GPS_ALT:
+		if (STATE(GPS_FIX) && sensors(SENSOR_GPS)) set32(buffer,  gpsSol.llh.alt);
+        break;
       case IBUS_SENSOR_TYPE_GROUND_SPEED:
-        #if defined(GPS)
-          if (STATE(GPS_FIX) && sensors(SENSOR_GPS)) set16u(buffer, gpsSol.groundSpeed);
-        #endif
+        if (STATE(GPS_FIX) && sensors(SENSOR_GPS)) set16u(buffer, gpsSol.groundSpeed);
         break;
       case IBUS_SENSOR_TYPE_ODO1:
       case IBUS_SENSOR_TYPE_ODO2:
       case IBUS_SENSOR_TYPE_GPS_DIST:
-        setGPSDist(buffer);
+        if (STATE(GPS_FIX) && sensors(SENSOR_GPS)) set16u(buffer, GPS_distanceToHome);
         break;
-      case IBUS_SENSOR_TYPE_ARMED:
-        set16u(buffer, ARMING_FLAG(ARMED) ? 0 : 1);
+      case IBUS_SENSOR_TYPE_COG:
+        if (STATE(GPS_FIX) && sensors(SENSOR_GPS))set16u(buffer, gpsSol.groundCourse * 100);
         break;
-      case IBUS_SENSOR_TYPE_FLIGHT_MODE:
-        setMode(buffer);
+      case IBUS_SENSOR_TYPE_GPS_STATUS:
+        setGPSstatus(buffer);
         break;
-      case IBUS_SENSOR_TYPE_PRES:
-        set32u(buffer, baro.baroPressure |   ((uint32_t) (getTemperature() + IBUS_TEMPERATURE_OFFSET))  << 19);
-        break;
-      case IBUS_SENSOR_TYPE_SPE: //km/h
-        //GPS_SPEED in cm/s => km/h, 1cm/s = 0.036 km/h
-        #if defined(GPS)
-          if (STATE(GPS_FIX) && sensors(SENSOR_GPS))   set16u(buffer, gpsSol.groundSpeed * 36 / 100);
-        #endif
-        break;
-      case IBUS_SENSOR_TYPE_GPS_LAT:
-        #if defined(GPS)
-        if (STATE(GPS_FIX) && sensors(SENSOR_GPS))  set32u(buffer, gpsSol.llh.lat);
-        #endif
-        break;
-      case IBUS_SENSOR_TYPE_GPS_LON:
-        #if defined(GPS)
-        if (STATE(GPS_FIX) && sensors(SENSOR_GPS))  set32u(buffer, gpsSol.llh.lon);
-        #endif
-        break;
-      case IBUS_SENSOR_TYPE_GPS_ALT:
-        setGPSALT(buffer);
-        break;
+#endif
+#if defined(BARO)
       case IBUS_SENSOR_TYPE_ALT:
         set32(buffer, baro.BaroAlt);
         break;
       case IBUS_SENSOR_TYPE_ALT_MAX:
         set32(buffer, baro.BaroAlt);
         break;
+      case IBUS_SENSOR_TYPE_PRES:
+        set32u(buffer, baro.baroPressure | ((uint32_t) (getTemperature() + IBUS_TEMPERATURE_OFFSET))  << 19);
+		break;
+#endif
     }
+
 }
 static void setIbusMeasurement(ibusAddress_t address)
 {
@@ -456,7 +432,8 @@ static void autodetectFirstReceivedAddressAsBaseAddress(ibusAddress_t returnAddr
 static bool theAddressIsWithinOurRange(ibusAddress_t returnAddress)
 {
     return (returnAddress >= ibusBaseAddress) &&
-           (ibusAddress_t)(returnAddress - ibusBaseAddress) < ARRAYLEN(sensorAddressTypeLookup);
+           (ibusAddress_t)(returnAddress - ibusBaseAddress) < ARRAYLEN(sensorAddressTypeLookup) && 
+		   sensorAddressTypeLookup[(returnAddress - ibusBaseAddress)] != IBUS_SENSOR_TYPE_UNKNOWN;
 }
 
 uint8_t respondToIbusRequest(uint8_t const * const ibusPacket)
